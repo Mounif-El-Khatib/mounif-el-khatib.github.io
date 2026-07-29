@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css"
+    />
+    <link rel="stylesheet" href="/css/prism-catppuccin.css" />
+    <title>PyBuster: Building a Directory Enumeration Tool | mounif</title>
+  </head>
+  <body>
+    <div class="container"><a class="back" href="/">
+  <svg width="12" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="30" y1="12" x2="5" y2="12"></line>
+    <polyline points="12 19 5 12 12 5"></polyline>
+  </svg>
+back
+</a>
+
+<div class="post-header">
+  <h1>PyBuster: Building a Directory Enumeration Tool</h1>
+  <div class="post-meta">
+    
+    <span class="tag">python</span><span class="tag">security</span>
+    
+  </div>
+</div>
+
+
+<p>
+  PyBuster is a multithreaded directory and file enumeration tool for web
+  servers. It brute-forces paths using a wordlist to discover hidden directories
+  and files. I originally built it as part of an Ethical Hacking course at AUB,
+  then cleaned it up and rewrote it as a standalone tool.
+</p>
+
+<p>
+  This isn't meant to replace tools like
+  <a href="https://github.com/OJ/gobuster">gobuster</a> or
+  <a href="https://www.kali.org/tools/dirb/">dirb</a>. They're faster, and
+  heavily tested. The point was to understand how directory enumeration actually
+  works: what requests to send, how to handle the responses, and what actually
+  counts as a discovered path.
+</p>
+
+<h2>How it works</h2>
+
+<p>
+  The tool reads a wordlist and appends each entry to the target URL as a path.
+  For each path, it sends an HTTP GET request without following redirects.
+  Non-404 responses get printed with their status code and content length. A
+  thread pool handles multiple requests concurrently to speed things up.
+</p>
+
+<h2>Recursive scanning</h2>
+
+<p>
+  Recursive mode is a big part of the tool. When the scanner discovers a
+  directory (indicated by a 301 redirect or a 200 on a path ending with
+  <code>/</code>), it re-queues the entire wordlist under that new directory. So
+  if the wordlist has <code>admin</code> and the scanner finds
+  <code>/docs/</code>, it automatically queues <code>/docs/admin/</code>.
+</p>
+
+<pre>
+if args.recursive and is_directory:
+    normalized = path if path.endswith("/") else path + "/"
+    if normalized not in visited_dirs:
+        visited_dirs.add(normalized)
+        for word in wordlist:
+            queue.put(normalized + word + "/")
+        progress.total += len(new_paths)
+        progress.refresh()
+</pre>
+
+<p>
+  A set of visited directories prevents infinite loops. The progress bar total
+  gets updated every time new paths are queued so it always reflects the actual
+  remaining work.
+</p>
+
+<h2>Status code filtering</h2>
+
+<p>
+  Sometimes, web servers can return unwanted codes like <code>403</code> in case
+  of lack of authorization. Some servers also return error pages with a
+  <code>200</code> status code. When scanning you might not care about that, so
+  the tool supports filtering status codes. The tool also reports content length
+  for each result, which helps spot false positives. A server might return
+  <code>200</code> on every path but the error page is always the same size, so
+  you can get some insights from the size of the returned page.
+</p>
+
+<h2>What I'd do differently</h2>
+
+<p>
+  Python is probably not the best language to build a tool like this. The
+  <code>requests</code> library is also not ideal since it doesn't support async
+  HTTP requests out of the box. A library like <code>httpx</code>
+  would be more suitable. Python also has the
+  <a href="https://docs.python.org/3/glossary.html#term-global-interpreter-lock"
+    >Global Interpreter Lock (GIL)</a
+  >, a mutex that only allows one thread to execute at a time, so you don't get
+  real parallelism like you would in other languages.
+</p>
+
+<p>
+  Since this tool is not meant to compete with established tools, I didn't focus
+  on optimizing for performance or handling every edge case. For a production
+  tool, a language like Go would make more sense: it compiles to a single static
+  binary with no dependencies, goroutines are lightweight enough to run
+  thousands concurrently, and there's no GIL which means real parallelism out of
+  the box.
+</p>
+
+<p>
+  The tool works by treating any non-<code>404</code> response as a valid page.
+  But <code>404</code> is just a convention. A misconfigured server could return
+  <code>404</code> on real pages or <code>200</code> on everything. A smarter
+  approach would be to request a path that definitely doesn't exist, like
+  <code>/asjwiufhiwfhwfdjfh</code>, record its response size as a baseline, and
+  filter out any result that matches.
+</p>
+
+<p>
+  The code is on
+  <a href="https://github.com/Mounif-El-Khatib/PyBuster">GitHub</a>.
+</p>
+
+
+<footer>
+  <a class="back" href="/">
+    <svg width="12" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="30" y1="12" x2="5" y2="12"></line>
+      <polyline points="12 19 5 12 12 5"></polyline>
+    </svg>
+    all posts
+  </a>
+</footer>
+</div>
+  </body>
+</html>
