@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css"
+    />
+    <link rel="stylesheet" href="/css/prism-catppuccin.css" />
+    <title>Building a Cross-Platform Keylogger | mounif</title>
+  </head>
+  <body>
+    <div class="container"><a class="back" href="/">
+  <svg width="12" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="30" y1="12" x2="5" y2="12"></line>
+    <polyline points="12 19 5 12 12 5"></polyline>
+  </svg>
+back
+</a>
+
+<div class="post-header">
+  <h1>Building a Cross-Platform Keylogger</h1>
+  <div class="post-meta">
+    
+    <span class="tag">python</span><span class="tag">security</span>
+    
+  </div>
+</div>
+
+
+<p>
+  This was built for an Ethical Hacking course at AUB. The assignment was to
+  build a cross-platform keylogger that persists across reboots, encrypts its
+  logs, exfiltrates data via email, and evades Windows Defender. The goal wasn't
+  to build and distribute malware, but to understand how these attacks work and
+  how to defend against them.
+</p>
+
+<h2>How it works</h2>
+
+<p>
+  The keylogger has four components, each mirroring a technique used by
+  real-world keyloggers.
+</p>
+
+<h3>Keystroke capture</h3>
+
+<p>
+  The tool uses <code>pynput</code> to hook into keyboard events. Every key
+  press is captured silently in the background with no visible window or
+  terminal. This isn't what makes it a keylogger though, it's just one of the
+  components of one.
+</p>
+
+<h3>Encrypted logging</h3>
+
+<p>
+  Each keystroke is encrypted before being written to a file in the system's
+  temp directory. If a defender finds the log file, they can't read it without
+  the key.
+</p>
+
+<h3>Persistence</h3>
+
+<p>
+  A keylogger that dies on reboot is useless. The tool handles persistence
+  differently on each platform:
+</p>
+
+<p>
+  On Linux, it adds a <code>@reboot</code> entry to the user's crontab. On
+  Windows, it writes a registry key under
+  <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code>, disguised as
+  "SystemUpdater" to look like a legitimate process.
+</p>
+
+<h3>Data exfiltration</h3>
+
+<p>
+  A background thread runs on a 2-minute interval. It reads the encrypted log
+  file, decrypts the contents, and sends them to a Gmail address over SMTP with
+  TLS. The email arrives with the subject "Keystroke Log."
+</p>
+
+<h2>Antivirus evasion</h2>
+
+<p>
+  I tested the packaged executable against two antivirus solutions on an
+  up-to-date Windows 10 machine (April 2025).
+</p>
+
+<p>
+  Microsoft Defender didn't flag it. Running a direct scan on the file returned
+  no threats, and the keylogger ran in the background without being detected.
+</p>
+
+<p>
+  Kaspersky also didn't flag it when running a direct scan. It probably did not
+  match any of the known signatures so it wasn't detected as a threat. But once
+  the keylogger actually ran, Kaspersky's behavior blocker detected its activity
+  and killed the process.
+</p>
+
+<p>
+  This is the difference between signature-based and behavior-based detection.
+  Defender only checked the file against known signatures and found nothing.
+  Kaspersky monitored what the process was doing at runtime, like hooking
+  keyboard input, writing encrypted files, sending emails and flagged it as
+  malicious based on behavior.
+</p>
+
+<h2>How to detect this</h2>
+
+<p>
+  Even without antivirus, manual inspection can catch most of these techniques.
+</p>
+
+<p>
+  On Unix-like systems, check your crontab with <code>crontab -l</code> and look
+  for <code>@reboot</code> entries pointing to executables in unusual paths. On
+  Windows, inspect the registry at
+  <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code> for entries
+  you don't recognize. A tool like
+  <a href="https://learn.microsoft.com/en-us/sysinternals/downloads/autoruns"
+    >Autoruns</a
+  >
+  makes this easier.
+</p>
+
+<p>
+  A process sending emails via port 465 from a non-email application is a red
+  flag. On Unix-like systems, <code>ps aux</code> will show suspicious
+  background processes. On Windows,
+  <a
+    href="https://learn.microsoft.com/en-us/sysinternals/downloads/process-explorer"
+    >Process Explorer</a
+  >
+  gives more detail than Task Manager.
+</p>
+
+<p>
+  The log file is written to the system temp directory. Files in
+  <code>/tmp/</code> or <code>%TEMP%</code> that keep growing are worth
+  inspecting, even if encrypted.
+</p>
+
+<h2>What I learned</h2>
+
+<p>
+  The main takeaway was how simple it is to build something like this. The
+  actual keylogging is a few lines of <code>pynput</code> code, persistence is a
+  crontab entry or a registry key and exfiltration is simple. None of these are
+  advanced techniques individually and tools like this can easily be built, so
+  it's important to learn malware detection techniques.
+</p>
+
+<p>
+  The antivirus test was interesting. It showed that signature-based detection
+  isn't enough. A simple custom written Python script with no known signatures
+  can bypass Defender, but behavior-based detection catches it by analyzing its
+  behavior. That's why endpoint protection focuses on behavior, not just
+  signatures.
+</p>
+
+<p>
+  The code is on
+  <a href="https://github.com/Mounif-El-Khatib/keylogger">GitHub</a>.
+</p>
+
+
+<footer>
+  <a class="back" href="/">
+    <svg width="12" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="30" y1="12" x2="5" y2="12"></line>
+      <polyline points="12 19 5 12 12 5"></polyline>
+    </svg>
+    all posts
+  </a>
+</footer>
+</div>
+  </body>
+</html>
